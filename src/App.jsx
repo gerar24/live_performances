@@ -4,8 +4,17 @@ import EquityChart from './components/EquityChart.jsx'
 import MetricsTable from './components/MetricsTable.jsx'
 import PortfolioDetail from './components/PortfolioDetail.jsx'
 
+const baseUrl = import.meta.env.BASE_URL || '/'
+const withBase = (p) => {
+  // Ensure single slash between base and path
+  if (baseUrl.endsWith('/')) {
+    return `${baseUrl}${p.replace(/^\//, '')}`
+  }
+  return `${baseUrl}/${p.replace(/^\//, '')}`
+}
+
 const fetchJson = async (path) => {
-  const res = await fetch(path)
+  const res = await fetch(withBase(path))
   if (!res.ok) throw new Error(`Failed to load ${path}`)
   return res.json()
 }
@@ -24,9 +33,9 @@ function App() {
     let cancelled = false
     setLoading(true)
     Promise.all([
-      fetchJson('/data/equity_curve.json'),
-      fetchJson('/data/metrics.json'),
-      fetchJson('/data/allocation_history.json'),
+      fetchJson('data/equity_curve.json'),
+      fetchJson('data/metrics.json'),
+      fetchJson('data/allocation_history.json'),
     ])
       .then(([e, m, a]) => {
         if (cancelled) return
