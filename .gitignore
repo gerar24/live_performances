@@ -1,0 +1,32 @@
+# Node
+node_modules
+dist
+.cache
+.parcel-cache
+
+# Mac
+.DS_Store
+
+# Env
+.env
+.env.*
+
+# Python
+.venv
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE
+.idea
+.vscode
+*.swp
+
+
