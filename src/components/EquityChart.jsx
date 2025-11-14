@@ -29,7 +29,7 @@ const secondaryColors = [
   '#404040', // neutral-700
 ]
 
-const EquityChart = ({ data, enabledPortfolios, enabledBenchmarks }) => {
+const EquityChart = ({ data, enabledPortfolios, enabledBenchmarks, namesMap = {} }) => {
   const chartData = useMemo(() => {
     if (!data || !data.dates) {
       return { labels: [], datasets: [] }
@@ -57,8 +57,9 @@ const EquityChart = ({ data, enabledPortfolios, enabledBenchmarks }) => {
     const benchEntries = Object.entries(data.benchmarks || {})
     benchEntries.forEach(([name, series], idx) => {
       if (enabledBenchmarks && enabledBenchmarks[name] === false) return
+      const display = namesMap[name] || name
       datasets.push({
-        label: name,
+        label: display,
         data: series,
         borderColor: secondaryColors[idx % secondaryColors.length],
         backgroundColor: secondaryColors[idx % secondaryColors.length],
@@ -70,7 +71,7 @@ const EquityChart = ({ data, enabledPortfolios, enabledBenchmarks }) => {
     })
 
     return { labels, datasets }
-  }, [data, enabledPortfolios, enabledBenchmarks])
+  }, [data, enabledPortfolios, enabledBenchmarks, namesMap])
 
   const options = {
     responsive: true,

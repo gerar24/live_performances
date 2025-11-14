@@ -45,16 +45,16 @@ def compute_metrics(daily_returns: pd.Series, equity: pd.Series) -> dict:
     # Annualized metrics assuming daily frequency
     n = len(daily_returns)
     if n <= 1:
-        return {"cagr": 0.0, "sharpe": 0.0, "volatility": 0.0, "max_drawdown": 0.0}
+        return {"total_return": 0.0, "sharpe": 0.0, "volatility": 0.0, "max_drawdown": 0.0}
 
-    years = n / TRADING_DAYS_PER_YEAR
     start_val = float(equity.iloc[0]) if n > 0 else 100.0
     end_val = float(equity.iloc[-1]) if n > 0 else 100.0
 
+    # Since inception cumulative return (not annualized)
     try:
-        cagr = (end_val / start_val) ** (1.0 / years) - 1.0 if years > 0 else 0.0
+        total_return = (end_val / start_val) - 1.0 if start_val > 0 else 0.0
     except Exception:
-        cagr = 0.0
+        total_return = 0.0
 
     mean_daily = float(daily_returns.mean())
     std_daily = float(daily_returns.std(ddof=0))
@@ -66,7 +66,7 @@ def compute_metrics(daily_returns: pd.Series, equity: pd.Series) -> dict:
     max_dd = float(drawdown.min()) if len(drawdown) else 0.0
 
     return {
-        "cagr": round(cagr, 6),
+        "total_return": round(total_return, 6),
         "sharpe": round(sharpe, 4),
         "volatility": round(volatility, 6),
         "max_drawdown": round(max_dd, 6),
@@ -101,9 +101,27 @@ def compute_beta_alpha(asset_returns: pd.Series, market_returns: pd.Series) -> t
         return 0.0, 0.0
     cov_am = float(r_a.cov(r_m))
     beta = cov_am / var_m
-    alpha_daily = float(r_a.mean()) - beta * float(r_m.mean())
-    alpha_annual = alpha_daily * TRADING_DAYS_PER_YEAR
-    return round(beta, 4), round(alpha_annual, 6)
+    # alpha removed per user request
+    return round(beta, 4), 0.0
+
+
+def compute_up_down_capture(asset_returns: pd.Series, market_returns: pd.Series) -> tuple[float, float]:
+    if asset_returns.empty or market_returns.empty:
+        return 0.0, 0.0
+    df = pd.concat([asset_returns, market_returns], axis=1).dropna()
+    if df.shape[0] == 0:
+        return 0.0, 0.0
+    r_a = df.iloc[:, 0]
+    r_m = df.iloc[:, 1]
+    up = df[r_m > 0.0]
+    down = df[r_m < 0.0]
+    up_cap = 0.0
+    down_cap = 0.0
+    if up.shape[0] > 0 and float(up.iloc[:, 1].mean()) != 0.0:
+        up_cap = float(up.iloc[:, 0].mean()) / float(up.iloc[:, 1].mean())
+    if down.shape[0] > 0 and float(down.iloc[:, 1].mean()) != 0.0:
+        down_cap = float(down.iloc[:, 0].mean()) / float(down.iloc[:, 1].mean())
+    return round(up_cap, 4), round(down_cap, 4)
 
 
 def download_prices(tickers, start_date):
@@ -238,6 +256,7 @@ def main():
 
     benchmark_tickers = list(dict.fromkeys(config.get("benchmarks", [])))
     market_candidate = config.get("market") if isinstance(config, dict) else None
+    names_map = config.get("names", {}) if isinstance(config, dict) else {}
 
     # Collect all tickers from portfolios
     all_tickers = set(benchmark_tickers)
@@ -272,7 +291,7 @@ def main():
     date_index = returns.index
     dates_list = [to_datestr(d) for d in date_index]
 
-    equity_out = {"dates": dates_list, "portfolios": {}, "benchmarks": {}}
+    equity_out = {"dates": dates_list, "portfolios": {}, "benchmarks": {}, "names": names_map}
     metrics_out = {"portfolios": {}, "benchmarks": {}}
     allocation_out = {}
 
@@ -297,21 +316,49 @@ def main():
         market_ticker = list(bench_daily_returns.keys())[0]
     market_returns = bench_daily_returns.get(market_ticker, pd.Series(dtype=float))
 
+    # Add beta and captures for benchmarks too (relative to market)
+    for t, r in bench_daily_returns.items():
+        m = metrics_out["benchmarks"].get(t, {})
+        if market_returns is not None and not market_returns.empty:
+            if t == market_ticker:
+                # Market vs itself: define as 1 and hide the suffix
+                m["beta"] = 1.0
+                m["up_capture"] = 1.0
+                m["down_capture"] = 1.0
+                m["beta_vs"] = ""
+                m["capture_vs"] = ""
+            else:
+                beta, _ = compute_beta_alpha(r, market_returns)
+                upc, downc = compute_up_down_capture(r, market_returns)
+                m["beta"] = beta
+                m["up_capture"] = upc
+                m["down_capture"] = downc
+                m["beta_vs"] = market_ticker or ""
+                m["capture_vs"] = market_ticker or ""
+        else:
+            m["beta"] = 0.0
+            m["up_capture"] = 0.0
+            m["down_capture"] = 0.0
+            m["beta_vs"] = ""
+            m["capture_vs"] = ""
+        metrics_out["benchmarks"][t] = m
+
     # Portfolios
     for portfolio_name, rebalances in portfolios_data.items():
         if not rebalances:
             flat = [100.0 for _ in dates_list]
             equity_out["portfolios"][portfolio_name] = flat
             metrics_out["portfolios"][portfolio_name] = {
-                "cagr": 0.0,
+                "total_return": 0.0,
                 "sharpe": 0.0,
                 "volatility": 0.0,
                 "max_drawdown": 0.0,
                 "sortino": 0.0,
                 "beta": 0.0,
-                "alpha": 0.0,
                 "beta_vs": market_ticker or "",
-                "alpha_vs": market_ticker or "",
+                "up_capture": 0.0,
+                "down_capture": 0.0,
+                "capture_vs": market_ticker or "",
                 "correlations": {k: 0.0 for k in bench_daily_returns.keys()},
             }
             allocation_out[portfolio_name] = {"dates": dates_list, "series": {}}
@@ -332,18 +379,21 @@ def main():
             else:
                 corrs[bt] = round(float(joined.corr().iloc[0, 1]), 4)
         base["correlations"] = corrs
-        # beta/alpha vs market
+        # beta and up/down capture vs market
         if market_returns is not None and not market_returns.empty:
-            beta, alpha = compute_beta_alpha(daily_returns, market_returns)
+            beta, _ = compute_beta_alpha(daily_returns, market_returns)
+            upc, downc = compute_up_down_capture(daily_returns, market_returns)
             base["beta"] = beta
-            base["alpha"] = alpha
             base["beta_vs"] = market_ticker or ""
-            base["alpha_vs"] = market_ticker or ""
+            base["up_capture"] = upc
+            base["down_capture"] = downc
+            base["capture_vs"] = market_ticker or ""
         else:
             base["beta"] = 0.0
-            base["alpha"] = 0.0
             base["beta_vs"] = ""
-            base["alpha_vs"] = ""
+            base["up_capture"] = 0.0
+            base["down_capture"] = 0.0
+            base["capture_vs"] = ""
 
         metrics_out["portfolios"][portfolio_name] = base
         # Include explicit rebalances from input for UI

@@ -8,29 +8,37 @@ const formatNum = (v, d = 2) => {
   return Number(v).toFixed(d)
 }
 
-const MetricsTable = ({ data }) => {
+const MetricsTable = ({ data, namesMap = {} }) => {
   const portfolioEntries = Object.entries((data && data.portfolios) || {})
   const benchmarkEntries = Object.entries((data && data.benchmarks) || {})
 
-  const Row = ({ name, m }) => (
+  const Row = ({ name, m, isBenchmark }) => {
+    const displayName = isBenchmark ? (namesMap[name] || name) : name
+    const totalRet = m?.total_return ?? m?.cagr
+    const capture =
+      m && (m.up_capture !== undefined || m.down_capture !== undefined)
+        ? `${formatNum(m.up_capture ?? 0, 2)} / ${formatNum(m.down_capture ?? 0, 2)}${m.capture_vs ? ` (${m.capture_vs})` : ''}`
+        : '-'
+    const correlations =
+      m?.correlations
+        ? Object.entries(m.correlations)
+            .map(([k, v]) => `${namesMap[k] || k}:${formatNum(v, 2)}`)
+            .join(' ')
+        : '-'
+    return (
     <tr className="border-b border-neutral-800">
-      <td className="px-4 py-2">{name}</td>
-      <td className="px-4 py-2">{formatPct(m?.cagr)}</td>
+      <td className="px-4 py-2">{displayName}</td>
+      <td className="px-4 py-2">{formatPct(totalRet)}</td>
       <td className="px-4 py-2">{formatNum(m?.sharpe, 2)}</td>
       <td className="px-4 py-2">{formatPct(m?.volatility)}</td>
       <td className="px-4 py-2">{formatPct(m?.max_drawdown)}</td>
       <td className="px-4 py-2">{formatNum(m?.sortino, 2)}</td>
       <td className="px-4 py-2">{formatNum(m?.beta, 2)}{m?.beta_vs ? ` (${m.beta_vs})` : ''}</td>
-      <td className="px-4 py-2">{formatPct(m?.alpha)}</td>
-      <td className="px-4 py-2">
-        {m?.correlations
-          ? Object.entries(m.correlations)
-              .map(([k, v]) => `${k}:${formatNum(v, 2)}`)
-              .join(' ')
-          : '-'}
-      </td>
+      <td className="px-4 py-2">{capture}</td>
+      <td className="px-4 py-2">{correlations}</td>
     </tr>
-  )
+    )
+  }
 
   return (
     <div className="w-full bg-neutral-900 rounded-lg border border-neutral-800 overflow-hidden">
@@ -38,22 +46,22 @@ const MetricsTable = ({ data }) => {
         <thead className="bg-neutral-900/60 border-b border-neutral-800">
           <tr>
             <th className="px-4 py-3 font-medium">Nombre</th>
-            <th className="px-4 py-3 font-medium">CAGR</th>
+            <th className="px-4 py-3 font-medium">Retorno acumulado</th>
             <th className="px-4 py-3 font-medium">Sharpe</th>
             <th className="px-4 py-3 font-medium">Volatilidad</th>
             <th className="px-4 py-3 font-medium">Max Drawdown</th>
             <th className="px-4 py-3 font-medium">Sortino</th>
             <th className="px-4 py-3 font-medium">Beta</th>
-            <th className="px-4 py-3 font-medium">Alpha (Ann.)</th>
+            <th className="px-4 py-3 font-medium">Up / Down</th>
             <th className="px-4 py-3 font-medium">Correlaciones</th>
           </tr>
         </thead>
         <tbody>
           {portfolioEntries.map(([name, m]) => (
-            <Row key={`p-${name}`} name={name} m={m} />
+            <Row key={`p-${name}`} name={name} m={m} isBenchmark={false} />
           ))}
           {benchmarkEntries.map(([name, m]) => (
-            <Row key={`b-${name}`} name={name} m={m} />
+            <Row key={`b-${name}`} name={name} m={m} isBenchmark={true} />
           ))}
         </tbody>
       </table>

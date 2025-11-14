@@ -10,10 +10,10 @@ const PortfolioDetail = ({ selectedPortfolio, allocationData }) => {
   return (
     <section className="space-y-4">
       <h2 className="text-xl font-semibold">{selectedPortfolio}</h2>
-      <AllocationChart dates={entry.dates} series={entry.series} />
+      <AllocationChart dates={entry.dates} series={entry.series} namesMap={allocationData.names || {}} />
       <div className="grid md:grid-cols-2 gap-4">
-        <CurrentAllocation dates={entry.dates} series={entry.series} />
-        <RebalanceHistory dates={entry.dates} series={entry.series} rebalances={entry.rebalances} />
+        <CurrentAllocation dates={entry.dates} series={entry.series} namesMap={allocationData.names || {}} />
+        <RebalanceHistory dates={entry.dates} series={entry.series} rebalances={entry.rebalances} namesMap={allocationData.names || {}} />
       </div>
     </section>
   )

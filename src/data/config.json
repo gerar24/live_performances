@@ -1,5 +1,6 @@
 {
-  "benchmarks": ["SPY", "CSPX.L"],
-  "market": "SPY"
+  "benchmarks": ["CSPX.L"],
+  "market": "CSPX.L",
+  "names": {"CSPX.L": "S&P 500 (CSPX.L)", "IUCM.L": "Communication Services (IUCM.L / XLC)", "IUCD.L": "Consumer Discretionary (IUCD.L / XLY)", "IUCS.L": "Consumer Staples (IUCS.L / XLP)", "IUES.L": "Energy (IUES.L / XLE)", "IUFS.L": "Financials (IUFS.L / XLF)", "IUHC.L": "Health Care (IUHC.L / XLV)", "IUIS.L": "Industrials (IUIS.L / XLI)", "IUIT.L": "Information Technology (IUIT.L / XLK)", "IUMS.L": "Materials (IUMS.L / XLB)", "XLRE": "Real Estate (XLRE / XLRE)", "IUUS.L": "Utilities (IUUS.L / XLU)"}
 }
 

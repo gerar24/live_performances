@@ -26,12 +26,12 @@ const colorPalette = [
   '#facc15',
 ]
 
-const AllocationChart = ({ dates, series }) => {
+const AllocationChart = ({ dates, series, namesMap = {} }) => {
   const chartData = useMemo(() => {
     if (!dates || !series) return { labels: [], datasets: [] }
     const tickers = Object.keys(series)
     const datasets = tickers.map((t, idx) => ({
-      label: t,
+      label: namesMap[t] || t,
       data: series[t].map((w) => Math.round(w * 1000) / 10), // percentage
       borderColor: colorPalette[idx % colorPalette.length],
       backgroundColor: colorPalette[idx % colorPalette.length] + '33',
@@ -40,7 +40,7 @@ const AllocationChart = ({ dates, series }) => {
       tension: 0.2,
     }))
     return { labels: dates, datasets }
-  }, [dates, series])
+  }, [dates, series, namesMap])
 
   const options = {
     responsive: true,

@@ -1,6 +1,6 @@
 const percent = (x) => `${(x * 100).toFixed(1)}%`
 
-const CurrentAllocation = ({ dates, series }) => {
+const CurrentAllocation = ({ dates, series, namesMap = {} }) => {
   if (!dates || !series) {
     return null
   }
@@ -18,7 +18,7 @@ const CurrentAllocation = ({ dates, series }) => {
         {sorted.map(({ ticker, weight }) => (
           <div key={ticker}>
             <div className="flex justify-between text-sm mb-1">
-              <span className="text-neutral-300">{ticker}</span>
+              <span className="text-neutral-300">{namesMap[ticker] || ticker}</span>
               <span className="text-neutral-400">{percent(weight)}</span>
             </div>
             <div className="w-full h-2 bg-neutral-800 rounded">

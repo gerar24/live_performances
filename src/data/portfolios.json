@@ -1,26 +1,14 @@
 {
-  "Modelo (Sectores) UK": [
+  "S&P 500 MultiFactor Sector Rotation Model": [
     {
-      "date": "2025-09-30",
-      "notes": "Inicio. Foco en Tecnología.",
+      "date": "2025-10-01",
+      "notes": "Inicio.",
       "allocation": { "IUCM.L": 0.246, "IUCD.L": 0.0065, "IUCS.L": 0.073, "IUES.L": 0.028, "IUFS.L": 0.157, "IUHC.L": 0.042,"IUIS.L":0.042,"IUIT.L":0.1025,"IUMS.L":0.015,"XLRE":0.019,"IUUS.L":0.269, "CSPX.L": 0.0 }
     },
     {
-      "date": "2025-10-31",
-      "notes": "Rotación a Financiero.",
+      "date": "2025-11-03",
+      "notes": "Rotación 1.",
       "allocation": { "IUCM.L": 0.2958, "IUCD.L": 0.0058, "IUCS.L": 0.0539, "IUES.L": 0.0404, "IUFS.L": 0.1284, "IUHC.L": 0.0348,"IUIS.L":0.0406,"IUIT.L":0.1093,"IUMS.L":0.0175,"XLRE":0.0196,"IUUS.L":0.2539, "CSPX.L": 0.0 }
-    }
-  ],
-  "Modelo (Sectores) USA": [
-    {
-      "date": "2025-09-30",
-      "notes": "Inicio. Foco en Tecnología.",
-      "allocation": { "XLC": 0.246, "XLY": 0.0065, "XLP": 0.073, "XLE": 0.028, "XLF": 0.157, "XLV": 0.042,"XLI":0.042,"XLK":0.1025,"XLB":0.015,"XLRE":0.019,"XLU":0.269, "SPY": 0.0 }
-    },
-    {
-      "date": "2025-10-31",
-      "notes": "Rotación a Financiero.",
-      "allocation": { "XLC": 0.2958, "XLY": 0.0058, "XLP": 0.0539, "XLE": 0.0404, "XLF": 0.1284, "XLV": 0.0348,"XLI":0.0406,"XLK":0.1093,"XLB":0.0175,"XLRE":0.0196,"XLU":0.2539, "SPY": 0.0 }
     }
   ]
 }

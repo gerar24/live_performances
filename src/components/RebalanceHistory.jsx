@@ -1,6 +1,6 @@
 const toPct = (x) => `${(x * 100).toFixed(1)}%`
 
-const RebalanceHistory = ({ dates, series, rebalances }) => {
+const RebalanceHistory = ({ dates, series, rebalances, namesMap = {} }) => {
   const list = Array.isArray(rebalances) ? rebalances : []
   return (
     <div className="w-full bg-neutral-900 rounded-lg border border-neutral-800 p-4">
@@ -22,13 +22,13 @@ const RebalanceHistory = ({ dates, series, rebalances }) => {
                       key={t}
                       className="text-xs bg-neutral-800 border border-neutral-700 rounded px-2 py-1"
                     >
-                      {t}: {toPct(w)}
+                      {namesMap[t] || t}: {toPct(w)}
                     </span>
                   ))}
               </div>
               {r.price && Object.keys(r.price).length > 0 ? (
                 <div className="mt-2 text-xs text-neutral-400">
-                  Precio usado: {Object.entries(r.price).map(([t, p]) => `${t}:${p}`).join('  ')}
+                  Precio usado: {Object.entries(r.price).map(([t, p]) => `${namesMap[t] || t}:${p}`).join('  ')}
                 </div>
               ) : null}
             </div>

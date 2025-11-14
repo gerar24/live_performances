@@ -28,6 +28,7 @@ function App() {
   const [selectedPortfolio, setSelectedPortfolio] = useState('')
   const [enabledPortfolios, setEnabledPortfolios] = useState({})
   const [enabledBenchmarks, setEnabledBenchmarks] = useState({})
+  const namesMap = useMemo(() => (equity?.names || {}), [equity])
 
   useEffect(() => {
     let cancelled = false
@@ -112,7 +113,7 @@ function App() {
                             setEnabledBenchmarks((prev) => ({ ...prev, [name]: e.target.checked }))
                           }
                         />
-                        <span>{name}</span>
+                        <span>{namesMap[name] || name}</span>
                       </label>
                     ))}
                   </div>
@@ -122,9 +123,10 @@ function App() {
                 data={equity}
                 enabledPortfolios={enabledPortfolios}
                 enabledBenchmarks={enabledBenchmarks}
+                namesMap={namesMap}
               />
             </section>
-            <MetricsTable data={metrics} />
+            <MetricsTable data={metrics} namesMap={namesMap} />
 
             <section className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
@@ -145,7 +147,7 @@ function App() {
 
             <PortfolioDetail
               selectedPortfolio={selectedPortfolio}
-              allocationData={allocations}
+              allocationData={{ ...allocations, names: namesMap }}
             />
           </>
         )}
