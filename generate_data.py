@@ -3,6 +3,9 @@ import math
 import os
 import time
 from datetime import datetime, timedelta
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 import pandas as pd
 import yfinance as yf
@@ -24,6 +27,29 @@ TRADING_DAYS_PER_YEAR = 252
 
 def ensure_dirs():
     os.makedirs(PUBLIC_DATA_DIR, exist_ok=True)
+
+
+def make_http_session() -> requests.Session:
+    session = requests.Session()
+    # Browser-like headers to reduce chances of being blocked
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Connection": "keep-alive",
+    })
+    retry = Retry(
+        total=3,
+        backoff_factor=0.8,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET", "HEAD"],
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=10, pool_maxsize=10)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
 
 
 def read_json(path):
@@ -129,6 +155,7 @@ def download_prices(tickers, start_date):
     if not tickers:
         return pd.DataFrame()
     # First attempt: batch download
+    session = make_http_session()
     try:
         df = yf.download(
             tickers=sorted(tickers),
@@ -136,9 +163,10 @@ def download_prices(tickers, start_date):
             end=(datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d"),
             progress=False,
             auto_adjust=False,
-            threads=True,
+            threads=False,
             interval="1d",
             group_by="column",
+            session=session,
         )
     except Exception as e:
         print(f"[download_prices] Batch download raised exception: {e}")
@@ -188,6 +216,7 @@ def download_prices(tickers, start_date):
                         threads=False,
                         interval="1d",
                         group_by="column",
+                        session=session,
                     )
                     px = _extract_prices(hist)
                     if px is not None and not px.empty:
