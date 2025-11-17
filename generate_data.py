@@ -43,6 +43,67 @@ def safe_normalize(weights: dict) -> dict:
     return {k: float(v) / total for k, v in weights.items()}
 
 
+def _fetch_via_chart_api(ticker: str, start_date: str, end_date: str, session: requests.Session) -> pd.DataFrame:
+    """
+    Last-resort fallback using Yahoo chart v8 API (does not require crumb).
+    Returns a DataFrame with a single column named as the ticker, indexed by date.
+    """
+    try:
+        start_ts = int(pd.Timestamp(start_date).tz_localize("UTC").timestamp())
+    except Exception:
+        start_ts = int(pd.Timestamp("2000-01-01").tz_localize("UTC").timestamp())
+    try:
+        # end is exclusive; add a day
+        end_ts = int((pd.Timestamp(end_date) + pd.Timedelta(days=1)).tz_localize("UTC").timestamp())
+    except Exception:
+        end_ts = int(pd.Timestamp.utcnow().timestamp())
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+    params = {
+        "period1": str(start_ts),
+        "period2": str(end_ts),
+        "interval": "1d",
+        "includePrePost": "false",
+        "events": "div,split,capitalGains",
+        "lang": "en-US",
+        "region": "US",
+    }
+    try:
+        resp = session.get(url, params=params, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        print(f"[download_prices] Chart API request failed for {ticker}: {e!r}")
+        return pd.DataFrame()
+    try:
+        results = data.get("chart", {}).get("result", [])
+        if not results:
+            return pd.DataFrame()
+        result = results[0]
+        timestamps = result.get("timestamp", []) or []
+        if not timestamps:
+            return pd.DataFrame()
+        indicators = result.get("indicators", {}) or {}
+        adj = (indicators.get("adjclose") or [{}])[0].get("adjclose")
+        closes = (indicators.get("quote") or [{}])[0].get("close")
+        series = adj if adj is not None else closes
+        if not series:
+            return pd.DataFrame()
+        idx = pd.to_datetime(pd.Series(timestamps), unit="s", utc=True).dt.tz_convert("UTC").dt.tz_localize(None)
+        s = pd.Series(series, index=idx, name=ticker).astype(float)
+        df = s.to_frame()
+        # filter to [start_date, end_date]
+        try:
+            start = pd.to_datetime(start_date)
+            end = pd.to_datetime(end_date)
+            df = df[(df.index >= start) & (df.index <= end)]
+        except Exception:
+            pass
+        return df
+    except Exception as e:
+        print(f"[download_prices] Failed to parse Chart API response for {ticker}: {e!r}")
+        return pd.DataFrame()
+
+
 def compute_metrics(daily_returns: pd.Series, equity: pd.Series) -> dict:
     # Annualized metrics assuming daily frequency
     n = len(daily_returns)
@@ -253,9 +314,10 @@ def download_prices(tickers, start_date):
                             last_err = e2
                             hist = pd.DataFrame()
                     # If still empty and we saw tz error previously, try period-based fetch
-                    if (hist is None or hist.empty) and last_err and "TzMissing" in repr(last_err):
-                        print(f"[download_prices] tz missing for {t}; trying period='max' with repair.")
+                    if (hist is None or hist.empty):
+                        # Try period-based fetch regardless of explicit tz error; some environments return empty without raising
                         try:
+                            print(f"[download_prices] Empty after history-range for {t}; trying period='max' with repair.")
                             tk = yf.Ticker(t, session=session)
                             hist3 = tk.history(
                                 period="max",
@@ -265,11 +327,16 @@ def download_prices(tickers, start_date):
                                 repair=True,
                                 timeout=30,
                             )
-                            # Slice by date range if we got anything
                             if hist3 is not None and not hist3.empty:
                                 hist = hist3[(hist3.index >= pd.to_datetime(start_date)) & (hist3.index <= pd.to_datetime(end_date))]
                         except Exception as e3:
                             last_err = e3
+                    if (hist is None or hist.empty):
+                        # Final fallback: call Yahoo chart API directly
+                        print(f"[download_prices] Falling back to Chart API for {t}.")
+                        hist_api = _fetch_via_chart_api(t, start_date, end_date, session)
+                        if hist_api is not None and not hist_api.empty:
+                            hist = hist_api
                     px = _extract_prices(hist)
                     if px is not None and not px.empty:
                         # Ensure column name is ticker
