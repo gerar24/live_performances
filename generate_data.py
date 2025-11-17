@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 import yfinance as yf
+import requests
 
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -128,20 +129,31 @@ def compute_up_down_capture(asset_returns: pd.Series, market_returns: pd.Series)
 def download_prices(tickers, start_date):
     if not tickers:
         return pd.DataFrame()
+    # Use a custom session with a browser-like User-Agent to reduce Yahoo 999/anti-bot issues in CI
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Connection": "keep-alive",
+    })
+    end_date = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
     # First attempt: batch download
     try:
         df = yf.download(
             tickers=sorted(tickers),
             start=start_date,
-            end=(datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d"),
+            end=end_date,
             progress=False,
             auto_adjust=False,
             threads=True,
             interval="1d",
             group_by="column",
+            session=session,
+            timeout=30,
         )
     except Exception as e:
-        print(f"[download_prices] Batch download raised exception: {e}")
+        print(f"[download_prices] Batch download raised exception: {e!r}")
         df = pd.DataFrame()
 
     def _extract_prices(df_in: pd.DataFrame) -> pd.DataFrame:
@@ -182,13 +194,32 @@ def download_prices(tickers, start_date):
                     hist = yf.download(
                         tickers=t,
                         start=start_date,
-                        end=(datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d"),
+                        end=end_date,
                         progress=False,
                         auto_adjust=False,
                         threads=False,
                         interval="1d",
                         group_by="column",
+                        session=session,
+                        timeout=30,
                     )
+                    if hist is None or hist.empty:
+                        print(f"[download_prices] Empty result from yf.download for {t} (attempt {attempt+1}); trying Ticker.history with repair.")
+                        try:
+                            tk = yf.Ticker(t, session=session)
+                            hist2 = tk.history(
+                                start=start_date,
+                                end=end_date,
+                                interval="1d",
+                                auto_adjust=False,
+                                actions=False,
+                                repair=True,
+                                timeout=30,
+                            )
+                            hist = hist2
+                        except Exception as e2:
+                            last_err = e2
+                            hist = pd.DataFrame()
                     px = _extract_prices(hist)
                     if px is not None and not px.empty:
                         # Ensure column name is ticker
@@ -203,12 +234,14 @@ def download_prices(tickers, start_date):
                         collected.append(px)
                         print(f"[download_prices] Downloaded data for {t} with {px.shape[0]} rows.")
                         break
+                    else:
+                        print(f"[download_prices] Still empty after alternate method for {t} (attempt {attempt+1}).")
                 except Exception as e:
                     last_err = e
                 # gentle backoff
                 time.sleep(1.0 + attempt * 0.5)
             else:
-                print(f"[download_prices] Failed to download {t}. Last error: {last_err}")
+                print(f"[download_prices] Failed to download {t}. Last error: {last_err!r}")
         if collected:
             prices = pd.concat(collected, axis=1).sort_index()
         else:
