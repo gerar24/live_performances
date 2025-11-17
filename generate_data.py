@@ -190,7 +190,12 @@ def compute_up_down_capture(asset_returns: pd.Series, market_returns: pd.Series)
 def download_prices(tickers, start_date):
     if not tickers:
         return pd.DataFrame()
-    # Use a custom session with a browser-like User-Agent to reduce Yahoo 999/anti-bot issues in CI
+    # Normalize start date to YYYY-MM-DD
+    try:
+        start_date_str = pd.to_datetime(start_date).strftime("%Y-%m-%d")
+    except Exception:
+        start_date_str = "2015-01-01"
+    # Create session for Chart API fallback only
     session = requests.Session()
     session.headers.update({
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0 Safari/537.36",
@@ -198,41 +203,7 @@ def download_prices(tickers, start_date):
         "Accept-Language": "en-US,en;q=0.9",
         "Connection": "keep-alive",
     })
-    end_date = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
-    # First attempt: batch download
-    try:
-        try:
-            # Prefer single-threaded to reduce Yahoo throttling and tz errors; try repair when available
-            df = yf.download(
-                tickers=sorted(tickers),
-                start=start_date,
-                end=end_date,
-                progress=False,
-                auto_adjust=False,
-                threads=False,
-                interval="1d",
-                group_by="column",
-                session=session,
-                timeout=30,
-                repair=True,
-            )
-        except TypeError:
-            # Older yfinance without 'repair' kwarg
-            df = yf.download(
-                tickers=sorted(tickers),
-                start=start_date,
-                end=end_date,
-                progress=False,
-                auto_adjust=False,
-                threads=False,
-                interval="1d",
-                group_by="column",
-                session=session,
-                timeout=30,
-            )
-    except Exception as e:
-        print(f"[download_prices] Batch download raised exception: {e!r}")
-        df = pd.DataFrame()
+    print(f"[download_prices] Using start={start_date_str}, end=period='max' (slice to start).")
 
     def _extract_prices(df_in: pd.DataFrame) -> pd.DataFrame:
         if df_in is None or df_in.empty:
@@ -259,110 +230,62 @@ def download_prices(tickers, start_date):
             px = px.to_frame()
         return px
 
-    prices = _extract_prices(df)
-
-    # Fallback: if batch returned empty, try per-ticker sequentially with retries
-    if prices is None or prices.empty:
-        print("[download_prices] Batch download returned empty. Falling back to per-ticker sequential downloads.")
-        collected = []
-        for t in sorted(tickers):
-            last_err = None
-            for attempt in range(3):
-                try:
-                    try:
-                        hist = yf.download(
-                            tickers=t,
-                            start=start_date,
-                            end=end_date,
-                            progress=False,
-                            auto_adjust=False,
-                            threads=False,
-                            interval="1d",
-                            group_by="column",
-                            session=session,
-                            timeout=30,
-                            repair=True,
-                        )
-                    except TypeError:
-                        hist = yf.download(
-                            tickers=t,
-                            start=start_date,
-                            end=end_date,
-                            progress=False,
-                            auto_adjust=False,
-                            threads=False,
-                            interval="1d",
-                            group_by="column",
-                            session=session,
-                            timeout=30,
-                        )
-                    if hist is None or hist.empty:
-                        print(f"[download_prices] Empty result from yf.download for {t} (attempt {attempt+1}); trying Ticker.history with repair.")
-                        try:
-                            tk = yf.Ticker(t, session=session)
-                            hist2 = tk.history(
-                                start=start_date,
-                                end=end_date,
-                                interval="1d",
-                                auto_adjust=False,
-                                actions=False,
-                                repair=True,
-                                timeout=30,
-                            )
-                            hist = hist2
-                        except Exception as e2:
-                            last_err = e2
-                            hist = pd.DataFrame()
-                    # If still empty and we saw tz error previously, try period-based fetch
-                    if (hist is None or hist.empty):
-                        # Try period-based fetch regardless of explicit tz error; some environments return empty without raising
-                        try:
-                            print(f"[download_prices] Empty after history-range for {t}; trying period='max' with repair.")
-                            tk = yf.Ticker(t, session=session)
-                            hist3 = tk.history(
-                                period="max",
-                                interval="1d",
-                                auto_adjust=False,
-                                actions=False,
-                                repair=True,
-                                timeout=30,
-                            )
-                            if hist3 is not None and not hist3.empty:
-                                hist = hist3[(hist3.index >= pd.to_datetime(start_date)) & (hist3.index <= pd.to_datetime(end_date))]
-                        except Exception as e3:
-                            last_err = e3
-                    if (hist is None or hist.empty):
-                        # Final fallback: call Yahoo chart API directly
-                        print(f"[download_prices] Falling back to Chart API for {t}.")
-                        hist_api = _fetch_via_chart_api(t, start_date, end_date, session)
-                        if hist_api is not None and not hist_api.empty:
-                            hist = hist_api
-                    px = _extract_prices(hist)
-                    if px is not None and not px.empty:
-                        # Ensure column name is ticker
-                        if px.shape[1] == 1:
-                            px.columns = [t]
-                        elif t in px.columns:
-                            px = px[[t]]
-                        else:
-                            # Take first column and rename
-                            px = px.iloc[:, [0]].copy()
-                            px.columns = [t]
-                        collected.append(px)
-                        print(f"[download_prices] Downloaded data for {t} with {px.shape[0]} rows.")
-                        break
-                    else:
-                        print(f"[download_prices] Still empty after alternate method for {t} (attempt {attempt+1}).")
-                except Exception as e:
-                    last_err = e
-                # gentle backoff
-                time.sleep(1.0 + attempt * 0.5)
+    collected = []
+    for t in sorted(tickers):
+        last_err = None
+        hist = pd.DataFrame()
+        try:
+            tk = yf.Ticker(t)
+            # Primary attempt: full history, then slice to start_date
+            try:
+                hist = tk.history(
+                    period="max",
+                    interval="1d",
+                    auto_adjust=False,
+                    actions=False,
+                    repair=True,
+                )
+            except TypeError:
+                hist = tk.history(
+                    period="max",
+                    interval="1d",
+                    auto_adjust=False,
+                    actions=False,
+                )
+            if hist is not None and not hist.empty:
+                hist = hist[hist.index >= pd.to_datetime(start_date_str)]
+        except Exception as e:
+            last_err = e
+            hist = pd.DataFrame()
+        # One fallback only: Chart API
+        if hist is None or hist.empty:
+            print(f"[download_prices] Empty after Ticker.history(period='max') for {t}; falling back to Chart API.")
+            end_date_today = datetime.utcnow().strftime("%Y-%m-%d")
+            hist_api = _fetch_via_chart_api(t, start_date_str, end_date_today, session)
+            if hist_api is not None and not hist_api.empty:
+                hist = hist_api
+        px = _extract_prices(hist)
+        if px is not None and not px.empty:
+            # Ensure column name is ticker
+            if px.shape[1] == 1:
+                px.columns = [t]
+            elif t in px.columns:
+                px = px[[t]]
             else:
-                print(f"[download_prices] Failed to download {t}. Last error: {last_err!r}")
-        if collected:
-            prices = pd.concat(collected, axis=1).sort_index()
+                # Take first column and rename
+                px = px.iloc[:, [0]].copy()
+                px.columns = [t]
+            collected.append(px)
+            print(f"[download_prices] Downloaded data for {t} with {px.shape[0]} rows.")
         else:
-            prices = pd.DataFrame()
+            print(f"[download_prices] Failed to download {t}. Last error: {last_err!r}")
+        # Rate limiting between tickers
+        time.sleep(2.0)
+
+    if collected:
+        prices = pd.concat(collected, axis=1).sort_index()
+    else:
+        prices = pd.DataFrame()
 
     # Clean & finalize
     if prices is None or prices.empty:
