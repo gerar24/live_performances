@@ -44,66 +44,6 @@ def safe_normalize(weights: dict) -> dict:
     return {k: float(v) / total for k, v in weights.items()}
 
 
-def _fetch_via_chart_api(ticker: str, start_date: str, end_date: str, session: requests.Session) -> pd.DataFrame:
-    """
-    Last-resort fallback using Yahoo chart v8 API (does not require crumb).
-    Returns a DataFrame with a single column named as the ticker, indexed by date.
-    """
-    try:
-        start_ts = int(pd.Timestamp(start_date).tz_localize("UTC").timestamp())
-    except Exception:
-        start_ts = int(pd.Timestamp("2000-01-01").tz_localize("UTC").timestamp())
-    try:
-        # end is exclusive; add a day
-        end_ts = int((pd.Timestamp(end_date) + pd.Timedelta(days=1)).tz_localize("UTC").timestamp())
-    except Exception:
-        end_ts = int(pd.Timestamp.utcnow().timestamp())
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-    params = {
-        "period1": str(start_ts),
-        "period2": str(end_ts),
-        "interval": "1d",
-        "includePrePost": "false",
-        "events": "div,split,capitalGains",
-        "lang": "en-US",
-        "region": "US",
-    }
-    try:
-        resp = session.get(url, params=params, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as e:
-        print(f"[download_prices] Chart API request failed for {ticker}: {e!r}")
-        return pd.DataFrame()
-    try:
-        results = data.get("chart", {}).get("result", [])
-        if not results:
-            return pd.DataFrame()
-        result = results[0]
-        timestamps = result.get("timestamp", []) or []
-        if not timestamps:
-            return pd.DataFrame()
-        indicators = result.get("indicators", {}) or {}
-        adj = (indicators.get("adjclose") or [{}])[0].get("adjclose")
-        closes = (indicators.get("quote") or [{}])[0].get("close")
-        series = adj if adj is not None else closes
-        if not series:
-            return pd.DataFrame()
-        idx = pd.to_datetime(pd.Series(timestamps), unit="s", utc=True).dt.tz_convert("UTC").dt.tz_localize(None)
-        s = pd.Series(series, index=idx, name=ticker).astype(float)
-        df = s.to_frame()
-        # filter to [start_date, end_date]
-        try:
-            start = pd.to_datetime(start_date)
-            end = pd.to_datetime(end_date)
-            df = df[(df.index >= start) & (df.index <= end)]
-        except Exception:
-            pass
-        return df
-    except Exception as e:
-        print(f"[download_prices] Failed to parse Chart API response for {ticker}: {e!r}")
-        return pd.DataFrame()
-
 
 def compute_metrics(daily_returns: pd.Series, equity: pd.Series) -> dict:
     # Annualized metrics assuming daily frequency
@@ -196,108 +136,41 @@ def download_prices(tickers, start_date):
         start_date_str = pd.to_datetime(start_date).strftime("%Y-%m-%d")
     except Exception:
         start_date_str = "2015-01-01"
-    # Create session for Chart API fallback only
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Connection": "keep-alive",
-    })
-    print(f"[download_prices] Using start={start_date_str}, end=period='max' (slice to start).")
-
-    def _extract_prices(df_in: pd.DataFrame) -> pd.DataFrame:
-        if df_in is None or df_in.empty:
-            return pd.DataFrame()
-        if isinstance(df_in.columns, pd.MultiIndex):
-            lvl0 = df_in.columns.get_level_values(0)
-            if "Adj Close" in lvl0:
-                px = df_in["Adj Close"].copy()
-            elif "Close" in lvl0:
-                px = df_in["Close"].copy()
-            else:
-                # Try to select last level if structure is (ticker, field)
-                try:
-                    px = df_in.xs("Adj Close", axis=1, level=1)
-                except Exception:
-                    try:
-                        px = df_in.xs("Close", axis=1, level=1)
-                    except Exception:
-                        px = pd.DataFrame()
-        else:
-            # Single-level columns: assume they are prices already
-            px = df_in.copy()
-        if isinstance(px, pd.Series):
-            px = px.to_frame()
-        return px
+    print(f"[download_prices] Downloading Adj Close via yfinance.download, start={start_date_str}")
 
     collected = []
     for t in sorted(tickers):
-        last_err = None
-        hist = pd.DataFrame()
         try:
-            tk = yf.Ticker(t)
-            # Primary attempt: full history, then slice to start_date
-            try:
-                hist = tk.history(
-                    period="max",
-                    interval="1d",
-                    auto_adjust=False,
-                    actions=False,
-                    repair=True,
-                )
-            except TypeError:
-                hist = tk.history(
-                    period="max",
-                    interval="1d",
-                    auto_adjust=False,
-                    actions=False,
-                )
-            if hist is not None and not hist.empty:
-                # Normalize timezone to naive UTC for consistent slicing
-                if isinstance(hist.index, pd.DatetimeIndex) and hist.index.tz is not None:
-                    hist.index = hist.index.tz_convert("UTC").tz_localize(None)
-                hist = hist[hist.index >= pd.to_datetime(start_date_str)]
-        except Exception as e:
-            last_err = e
-            hist = pd.DataFrame()
-        # One fallback only: Chart API
-        if hist is None or hist.empty:
-            print(f"[download_prices] Empty after Ticker.history(period='max') for {t}; falling back to Chart API.")
-            end_date_today = datetime.utcnow().strftime("%Y-%m-%d")
-            hist_api = _fetch_via_chart_api(t, start_date_str, end_date_today, session)
-            if hist_api is not None and not hist_api.empty:
-                hist = hist_api
-        px = _extract_prices(hist)
-        if px is not None and not px.empty:
-            # Ensure column name is ticker
-            if px.shape[1] == 1:
-                px.columns = [t]
-            elif t in px.columns:
-                px = px[[t]]
-            else:
-                # Take first column and rename
-                px = px.iloc[:, [0]].copy()
-                px.columns = [t]
-            collected.append(px)
-            print(f"[download_prices] Downloaded data for {t} with {px.shape[0]} rows.")
-        else:
-            print(f"[download_prices] Failed to download {t}. Last error: {last_err!r}")
-        # Rate limiting between tickers
-        time.sleep(4.0 + random.uniform(0.0, 2.0))
+            df = yf.download(t, start=start_date_str, progress=False, auto_adjust=False, group_by="column", threads=False)
+        except TypeError:
+            # Fallback for older signatures
+            df = yf.download(t, start=start_date_str, progress=False)
+        if df is None or df.empty:
+            print(f"[download_prices] No data for {t}")
+            continue
+        # Normalize timezone to naive for consistent handling
+        if isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
+            df.index = df.index.tz_convert("UTC").tz_localize(None)
+        # Prefer Adj Close, fallback to Close
+        col = "Adj Close" if "Adj Close" in df.columns else ("Close" if "Close" in df.columns else None)
+        if col is None:
+            print(f"[download_prices] Missing Adj Close/Close for {t}, skipping.")
+            continue
+        px = df[[col]].rename(columns={col: t})
+        collected.append(px)
+        print(f"[download_prices] {t}: {px.shape[0]} rows")
 
-    if collected:
-        prices = pd.concat(collected, axis=1).sort_index()
-    else:
-        prices = pd.DataFrame()
-
-    # Clean & finalize
-    if prices is None or prices.empty:
-        print("[download_prices] No prices available after all attempts.")
+    if not collected:
+        print("[download_prices] No series downloaded.")
         return pd.DataFrame()
+
+    prices = pd.concat(collected, axis=1).sort_index()
+    # Drop duplicate column names if any (keep first occurrence)
+    if prices.columns.duplicated().any():
+        prices = prices.loc[:, ~prices.columns.duplicated()]
     prices = prices.ffill()
     prices = prices.dropna(axis=1, how="all")
-    # Ensure strictly positive values (drop non-sensical)
+    # Ensure numeric and positive where possible
     for c in list(prices.columns):
         series = pd.to_numeric(prices[c], errors="coerce")
         if series.dropna().le(0).all():
@@ -311,6 +184,20 @@ def download_prices(tickers, start_date):
 
 
 def simulate_portfolio_path(prices: pd.DataFrame, returns: pd.DataFrame, index: pd.DatetimeIndex, rebalances: list) -> tuple[pd.Series, dict]:
+    def price_at(df: pd.DataFrame, dt: pd.Timestamp, ticker: str) -> float:
+        if ticker not in df.columns:
+            return float('nan')
+        col = df[ticker]
+        if isinstance(col, pd.DataFrame):
+            col = col.iloc[:, 0]
+        try:
+            v = col.loc[dt]
+            if isinstance(v, (pd.Series, pd.DataFrame)):
+                v = v.iloc[0]
+            return float(v)
+        except Exception:
+            return float('nan')
+
     # Build mapping of index position -> target weights and optional price paid
     rb_map = {}
     union_tickers = set()
@@ -358,7 +245,7 @@ def simulate_portfolio_path(prices: pd.DataFrame, returns: pd.DataFrame, index: 
             if i > 0:
                 total_equity_prev = 0.0
                 for t in union_tickers:
-                    p_prev = float(prices.at[prev_dt, t]) if t in prices.columns else float('nan')
+                    p_prev = price_at(prices, prev_dt, t)
                     if math.isfinite(p_prev) and p_prev > 0:
                         total_equity_prev += shares[t] * p_prev
                 if not math.isfinite(total_equity_prev) or total_equity_prev <= 0.0:
@@ -375,9 +262,9 @@ def simulate_portfolio_path(prices: pd.DataFrame, returns: pd.DataFrame, index: 
                 if entry_price is None or not isinstance(entry_price, (int, float)) or entry_price <= 0:
                     # Fall back to previous close price when available, else today's close if first day
                     if i > 0:
-                        entry_price = float(prices.at[prev_dt, t]) if t in prices.columns else float('nan')
+                        entry_price = price_at(prices, prev_dt, t)
                     else:
-                        entry_price = float(prices.at[dt, t]) if t in prices.columns else float('nan')
+                        entry_price = price_at(prices, dt, t)
                 if entry_price is None or not math.isfinite(entry_price) or entry_price <= 0:
                     shares[t] = 0.0
                 else:
@@ -386,14 +273,14 @@ def simulate_portfolio_path(prices: pd.DataFrame, returns: pd.DataFrame, index: 
         # Value portfolio at today's close
         total_equity_today = 0.0
         for t in union_tickers:
-            p = float(prices.at[dt, t]) if t in prices.columns else float('nan')
+            p = price_at(prices, dt, t)
             if math.isfinite(p) and p > 0:
                 total_equity_today += shares[t] * p
         equity_values.append(total_equity_today)
 
         if total_equity_today > 0.0:
             for t in union_tickers:
-                p = float(prices.at[dt, t]) if t in prices.columns else float('nan')
+                p = price_at(prices, dt, t)
                 v = shares[t] * p if math.isfinite(p) and p > 0 else 0.0
                 alloc_history[t].append(v / total_equity_today if total_equity_today else 0.0)
         else:
@@ -458,6 +345,9 @@ def main():
         if t not in returns.columns:
             continue
         r = returns[t]
+        # If duplicate columns created a DataFrame slice, take the first column
+        if isinstance(r, pd.DataFrame):
+            r = r.iloc[:, 0]
         equity = (1.0 + r).cumprod() * 100.0
         equity_out["benchmarks"][t] = [round(float(x), 4) for x in equity.tolist()]
         base_metrics = compute_metrics(r, equity)
