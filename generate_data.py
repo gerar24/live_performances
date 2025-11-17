@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import yfinance as yf
 import requests
+import random
 
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -253,6 +254,9 @@ def download_prices(tickers, start_date):
                     actions=False,
                 )
             if hist is not None and not hist.empty:
+                # Normalize timezone to naive UTC for consistent slicing
+                if isinstance(hist.index, pd.DatetimeIndex) and hist.index.tz is not None:
+                    hist.index = hist.index.tz_convert("UTC").tz_localize(None)
                 hist = hist[hist.index >= pd.to_datetime(start_date_str)]
         except Exception as e:
             last_err = e
@@ -280,7 +284,7 @@ def download_prices(tickers, start_date):
         else:
             print(f"[download_prices] Failed to download {t}. Last error: {last_err!r}")
         # Rate limiting between tickers
-        time.sleep(2.0)
+        time.sleep(4.0 + random.uniform(0.0, 2.0))
 
     if collected:
         prices = pd.concat(collected, axis=1).sort_index()
