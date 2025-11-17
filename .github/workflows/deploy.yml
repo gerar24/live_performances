@@ -29,6 +29,26 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           python generate_data.py
+      - name: Validate generated data (non-empty)
+        run: |
+          echo "Listing generated files:"
+          ls -lh public/data || true
+          echo "Preview equity_curve.json:"
+          head -n 80 public/data/equity_curve.json || true
+          python - <<'PY'
+          import json, sys
+          from pathlib import Path
+          p = Path("public/data/equity_curve.json")
+          if not p.exists():
+              print("ERROR: equity_curve.json was not generated")
+              sys.exit(1)
+          data = json.loads(p.read_text(encoding="utf-8") or "{}")
+          dates = data.get("dates", [])
+          if not isinstance(dates, list) or len(dates) == 0:
+              print("ERROR: equity_curve.json has empty dates. Failing build to avoid deploying empty data.")
+              sys.exit(1)
+          print(f"OK: equity_curve.json has {len(dates)} dates")
+          PY
       - name: Setup Node
         uses: actions/setup-node@v4
         with:

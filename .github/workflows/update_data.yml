@@ -34,6 +34,28 @@ jobs:
 
       - name: Commit data changes
         run: |
+          echo "Validating generated data before commit..."
+          python - <<'PY'
+          import json, sys
+          from pathlib import Path
+          p = Path("public/data/equity_curve.json")
+          if not p.exists():
+              print("No equity_curve.json generated; skipping commit.")
+              sys.exit(100)
+          try:
+              data = json.loads(p.read_text(encoding="utf-8") or "{}")
+          except Exception as e:
+              print(f"Invalid JSON in equity_curve.json: {e}; skipping commit.")
+              sys.exit(100)
+          dates = data.get("dates", [])
+          if not isinstance(dates, list) or len(dates) == 0:
+              print("equity_curve.json has empty dates; skipping commit to avoid publishing empty data.")
+              sys.exit(100)
+          print(f"Data seems valid with {len(dates)} dates; proceeding to commit.")
+          PY
+          if [ "$?" -eq 100 ]; then
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/data/*.json

@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import time
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -127,30 +128,108 @@ def compute_up_down_capture(asset_returns: pd.Series, market_returns: pd.Series)
 def download_prices(tickers, start_date):
     if not tickers:
         return pd.DataFrame()
-    df = yf.download(
-        tickers=sorted(tickers),
-        start=start_date,
-        end=(datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d"),
-        progress=False,
-        auto_adjust=False,
-        threads=True,
-    )
-    # Handle multi-index columns from yfinance
-    if isinstance(df.columns, pd.MultiIndex):
-        if ("Adj Close" in df.columns.get_level_values(0)):
-            prices = df["Adj Close"].copy()
+    # First attempt: batch download
+    try:
+        df = yf.download(
+            tickers=sorted(tickers),
+            start=start_date,
+            end=(datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d"),
+            progress=False,
+            auto_adjust=False,
+            threads=True,
+            interval="1d",
+            group_by="column",
+        )
+    except Exception as e:
+        print(f"[download_prices] Batch download raised exception: {e}")
+        df = pd.DataFrame()
+
+    def _extract_prices(df_in: pd.DataFrame) -> pd.DataFrame:
+        if df_in is None or df_in.empty:
+            return pd.DataFrame()
+        if isinstance(df_in.columns, pd.MultiIndex):
+            lvl0 = df_in.columns.get_level_values(0)
+            if "Adj Close" in lvl0:
+                px = df_in["Adj Close"].copy()
+            elif "Close" in lvl0:
+                px = df_in["Close"].copy()
+            else:
+                # Try to select last level if structure is (ticker, field)
+                try:
+                    px = df_in.xs("Adj Close", axis=1, level=1)
+                except Exception:
+                    try:
+                        px = df_in.xs("Close", axis=1, level=1)
+                    except Exception:
+                        px = pd.DataFrame()
         else:
-            # Fallback to Close
-            prices = df["Close"].copy()
-    else:
-        prices = df.copy()
-    # Clean up columns if single ticker returns a Series
-    if isinstance(prices, pd.Series):
-        prices = prices.to_frame()
-    # Forward-fill to handle missing values
+            # Single-level columns: assume they are prices already
+            px = df_in.copy()
+        if isinstance(px, pd.Series):
+            px = px.to_frame()
+        return px
+
+    prices = _extract_prices(df)
+
+    # Fallback: if batch returned empty, try per-ticker sequentially with retries
+    if prices is None or prices.empty:
+        print("[download_prices] Batch download returned empty. Falling back to per-ticker sequential downloads.")
+        collected = []
+        for t in sorted(tickers):
+            last_err = None
+            for attempt in range(3):
+                try:
+                    hist = yf.download(
+                        tickers=t,
+                        start=start_date,
+                        end=(datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d"),
+                        progress=False,
+                        auto_adjust=False,
+                        threads=False,
+                        interval="1d",
+                        group_by="column",
+                    )
+                    px = _extract_prices(hist)
+                    if px is not None and not px.empty:
+                        # Ensure column name is ticker
+                        if px.shape[1] == 1:
+                            px.columns = [t]
+                        elif t in px.columns:
+                            px = px[[t]]
+                        else:
+                            # Take first column and rename
+                            px = px.iloc[:, [0]].copy()
+                            px.columns = [t]
+                        collected.append(px)
+                        print(f"[download_prices] Downloaded data for {t} with {px.shape[0]} rows.")
+                        break
+                except Exception as e:
+                    last_err = e
+                # gentle backoff
+                time.sleep(1.0 + attempt * 0.5)
+            else:
+                print(f"[download_prices] Failed to download {t}. Last error: {last_err}")
+        if collected:
+            prices = pd.concat(collected, axis=1).sort_index()
+        else:
+            prices = pd.DataFrame()
+
+    # Clean & finalize
+    if prices is None or prices.empty:
+        print("[download_prices] No prices available after all attempts.")
+        return pd.DataFrame()
     prices = prices.ffill()
-    # Drop columns that are entirely NaN
     prices = prices.dropna(axis=1, how="all")
+    # Ensure strictly positive values (drop non-sensical)
+    for c in list(prices.columns):
+        series = pd.to_numeric(prices[c], errors="coerce")
+        if series.dropna().le(0).all():
+            print(f"[download_prices] Dropping {c} because all values are <= 0 or NaN.")
+            prices = prices.drop(columns=[c])
+        else:
+            prices[c] = series
+    if prices.empty:
+        print("[download_prices] Prices empty after cleaning.")
     return prices
 
 
@@ -279,6 +358,7 @@ def main():
     prices = download_prices(all_tickers, earliest_date.strftime("%Y-%m-%d"))
     if prices.empty:
         # Produce minimal empty outputs
+        print("[main] WARNING: No price data downloaded. Writing empty JSON outputs.")
         with open(EQUITY_OUT, "w", encoding="utf-8") as f:
             json.dump({"dates": [], "portfolios": {}, "benchmarks": {}}, f, ensure_ascii=False, indent=2)
         with open(METRICS_OUT, "w", encoding="utf-8") as f:
