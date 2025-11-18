@@ -130,7 +130,8 @@ def download_prices(tickers, start_date):
     df = yf.download(
         tickers=sorted(tickers),
         start=start_date,
-        end=(datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d"),
+        # Let yfinance fetch up to the most recent available date; avoids UTC now issues
+        end=None,
         progress=False,
         auto_adjust=False,
         threads=True,
