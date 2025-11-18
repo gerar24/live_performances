@@ -1,13 +1,10 @@
 import json
 import math
 import os
-import time
 from datetime import datetime, timedelta
 
 import pandas as pd
 import yfinance as yf
-import requests
-import random
 
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -42,7 +39,6 @@ def safe_normalize(weights: dict) -> dict:
     if total <= 0:
         return {k: 0.0 for k in weights.keys()}
     return {k: float(v) / total for k, v in weights.items()}
-
 
 
 def compute_metrics(daily_returns: pd.Series, equity: pd.Series) -> dict:
@@ -131,73 +127,34 @@ def compute_up_down_capture(asset_returns: pd.Series, market_returns: pd.Series)
 def download_prices(tickers, start_date):
     if not tickers:
         return pd.DataFrame()
-    # Normalize start date to YYYY-MM-DD
-    try:
-        start_date_str = pd.to_datetime(start_date).strftime("%Y-%m-%d")
-    except Exception:
-        start_date_str = "2015-01-01"
-    print(f"[download_prices] Downloading Adj Close via yfinance.download, start={start_date_str}")
-
-    collected = []
-    for t in sorted(tickers):
-        try:
-            df = yf.download(t, start=start_date_str, progress=False, auto_adjust=False, group_by="column", threads=False)
-        except TypeError:
-            # Fallback for older signatures
-            df = yf.download(t, start=start_date_str, progress=False)
-        if df is None or df.empty:
-            print(f"[download_prices] No data for {t}")
-            continue
-        # Normalize timezone to naive for consistent handling
-        if isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
-            df.index = df.index.tz_convert("UTC").tz_localize(None)
-        # Prefer Adj Close, fallback to Close
-        col = "Adj Close" if "Adj Close" in df.columns else ("Close" if "Close" in df.columns else None)
-        if col is None:
-            print(f"[download_prices] Missing Adj Close/Close for {t}, skipping.")
-            continue
-        px = df[[col]].rename(columns={col: t})
-        collected.append(px)
-        print(f"[download_prices] {t}: {px.shape[0]} rows")
-
-    if not collected:
-        print("[download_prices] No series downloaded.")
-        return pd.DataFrame()
-
-    prices = pd.concat(collected, axis=1).sort_index()
-    # Drop duplicate column names if any (keep first occurrence)
-    if prices.columns.duplicated().any():
-        prices = prices.loc[:, ~prices.columns.duplicated()]
-    prices = prices.ffill()
-    prices = prices.dropna(axis=1, how="all")
-    # Ensure numeric and positive where possible
-    for c in list(prices.columns):
-        series = pd.to_numeric(prices[c], errors="coerce")
-        if series.dropna().le(0).all():
-            print(f"[download_prices] Dropping {c} because all values are <= 0 or NaN.")
-            prices = prices.drop(columns=[c])
+    df = yf.download(
+        tickers=sorted(tickers),
+        start=start_date,
+        end=(datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d"),
+        progress=False,
+        auto_adjust=False,
+        threads=True,
+    )
+    # Handle multi-index columns from yfinance
+    if isinstance(df.columns, pd.MultiIndex):
+        if ("Adj Close" in df.columns.get_level_values(0)):
+            prices = df["Adj Close"].copy()
         else:
-            prices[c] = series
-    if prices.empty:
-        print("[download_prices] Prices empty after cleaning.")
+            # Fallback to Close
+            prices = df["Close"].copy()
+    else:
+        prices = df.copy()
+    # Clean up columns if single ticker returns a Series
+    if isinstance(prices, pd.Series):
+        prices = prices.to_frame()
+    # Forward-fill to handle missing values
+    prices = prices.ffill()
+    # Drop columns that are entirely NaN
+    prices = prices.dropna(axis=1, how="all")
     return prices
 
 
 def simulate_portfolio_path(prices: pd.DataFrame, returns: pd.DataFrame, index: pd.DatetimeIndex, rebalances: list) -> tuple[pd.Series, dict]:
-    def price_at(df: pd.DataFrame, dt: pd.Timestamp, ticker: str) -> float:
-        if ticker not in df.columns:
-            return float('nan')
-        col = df[ticker]
-        if isinstance(col, pd.DataFrame):
-            col = col.iloc[:, 0]
-        try:
-            v = col.loc[dt]
-            if isinstance(v, (pd.Series, pd.DataFrame)):
-                v = v.iloc[0]
-            return float(v)
-        except Exception:
-            return float('nan')
-
     # Build mapping of index position -> target weights and optional price paid
     rb_map = {}
     union_tickers = set()
@@ -245,7 +202,7 @@ def simulate_portfolio_path(prices: pd.DataFrame, returns: pd.DataFrame, index: 
             if i > 0:
                 total_equity_prev = 0.0
                 for t in union_tickers:
-                    p_prev = price_at(prices, prev_dt, t)
+                    p_prev = float(prices.at[prev_dt, t]) if t in prices.columns else float('nan')
                     if math.isfinite(p_prev) and p_prev > 0:
                         total_equity_prev += shares[t] * p_prev
                 if not math.isfinite(total_equity_prev) or total_equity_prev <= 0.0:
@@ -262,9 +219,9 @@ def simulate_portfolio_path(prices: pd.DataFrame, returns: pd.DataFrame, index: 
                 if entry_price is None or not isinstance(entry_price, (int, float)) or entry_price <= 0:
                     # Fall back to previous close price when available, else today's close if first day
                     if i > 0:
-                        entry_price = price_at(prices, prev_dt, t)
+                        entry_price = float(prices.at[prev_dt, t]) if t in prices.columns else float('nan')
                     else:
-                        entry_price = price_at(prices, dt, t)
+                        entry_price = float(prices.at[dt, t]) if t in prices.columns else float('nan')
                 if entry_price is None or not math.isfinite(entry_price) or entry_price <= 0:
                     shares[t] = 0.0
                 else:
@@ -273,14 +230,14 @@ def simulate_portfolio_path(prices: pd.DataFrame, returns: pd.DataFrame, index: 
         # Value portfolio at today's close
         total_equity_today = 0.0
         for t in union_tickers:
-            p = price_at(prices, dt, t)
+            p = float(prices.at[dt, t]) if t in prices.columns else float('nan')
             if math.isfinite(p) and p > 0:
                 total_equity_today += shares[t] * p
         equity_values.append(total_equity_today)
 
         if total_equity_today > 0.0:
             for t in union_tickers:
-                p = price_at(prices, dt, t)
+                p = float(prices.at[dt, t]) if t in prices.columns else float('nan')
                 v = shares[t] * p if math.isfinite(p) and p > 0 else 0.0
                 alloc_history[t].append(v / total_equity_today if total_equity_today else 0.0)
         else:
@@ -322,7 +279,6 @@ def main():
     prices = download_prices(all_tickers, earliest_date.strftime("%Y-%m-%d"))
     if prices.empty:
         # Produce minimal empty outputs
-        print("[main] WARNING: No price data downloaded. Writing empty JSON outputs.")
         with open(EQUITY_OUT, "w", encoding="utf-8") as f:
             json.dump({"dates": [], "portfolios": {}, "benchmarks": {}}, f, ensure_ascii=False, indent=2)
         with open(METRICS_OUT, "w", encoding="utf-8") as f:
@@ -345,9 +301,6 @@ def main():
         if t not in returns.columns:
             continue
         r = returns[t]
-        # If duplicate columns created a DataFrame slice, take the first column
-        if isinstance(r, pd.DataFrame):
-            r = r.iloc[:, 0]
         equity = (1.0 + r).cumprod() * 100.0
         equity_out["benchmarks"][t] = [round(float(x), 4) for x in equity.tolist()]
         base_metrics = compute_metrics(r, equity)
@@ -468,4 +421,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
