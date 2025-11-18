@@ -1,4 +1,33 @@
 {
-  "portfolios": {},
-  "benchmarks": {}
+  "portfolios": {
+    "S&P 500 MultiFactor Sector Rotation Model": {
+      "total_return": -0.003097,
+      "sharpe": -0.1878,
+      "volatility": 0.097278,
+      "max_drawdown": -0.028595,
+      "sortino": -0.38,
+      "correlations": {
+        "CSPX.L": 0.7809
+      },
+      "beta": 0.5744,
+      "beta_vs": "CSPX.L",
+      "up_capture": 0.4901,
+      "down_capture": 0.5492,
+      "capture_vs": "CSPX.L"
+    }
+  },
+  "benchmarks": {
+    "CSPX.L": {
+      "total_return": -0.011507,
+      "sharpe": -0.5615,
+      "volatility": 0.136258,
+      "max_drawdown": -0.041788,
+      "sortino": -1.0339,
+      "beta": 1.0,
+      "up_capture": 1.0,
+      "down_capture": 1.0,
+      "beta_vs": "",
+      "capture_vs": ""
+    }
+  }
 }
