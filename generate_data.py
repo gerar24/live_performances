@@ -130,11 +130,10 @@ def download_prices(tickers, start_date):
     df = yf.download(
         tickers=sorted(tickers),
         start=start_date,
-        # Let yfinance fetch up to the most recent available date; avoids UTC now issues
         end=None,
         progress=False,
         auto_adjust=False,
-        threads=True,
+        threads=False, 
     )
     # Handle multi-index columns from yfinance
     if isinstance(df.columns, pd.MultiIndex):
