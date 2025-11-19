@@ -10,6 +10,14 @@
       "notes": "Rotación 1.",
       "allocation": { "IUCM.L": 0.2958, "IUCD.L": 0.0058, "IUCS.L": 0.0539, "IUES.L": 0.0404, "IUFS.L": 0.1284, "IUHC.L": 0.0348,"IUIS.L":0.0406,"IUIT.L":0.1093,"IUMS.L":0.0175,"XLRE":0.0196,"IUUS.L":0.2539, "CSPX.L": 0.0 }
     }
+  ],
+  "iShares S&P 500 Equal Weight UCITS ETF": [
+    {
+      "date": "2025-10-02",
+      "notes": "Inicio.",
+      "allocation": { "EWSP.L": 1.0,"CSPX.L": 0.0 }
+    }
   ]
 }
+
 
