@@ -147,6 +147,23 @@ def download_prices(tickers, start_date):
     # Clean up columns if single ticker returns a Series
     if isinstance(prices, pd.Series):
         prices = prices.to_frame()
+    # If a day's volume is 0, forward-fill the price for that day
+    volume_df = None
+    if isinstance(df.columns, pd.MultiIndex):
+        if ("Volume" in df.columns.get_level_values(0)):
+            volume_df = df["Volume"].copy()
+    else:
+        if "Volume" in df.columns:
+            # In single-ticker case, df has single-index columns; we still extract Volume
+            volume_df = df[["Volume"]].copy()
+    if volume_df is not None and not volume_df.empty:
+        volume_df = volume_df.reindex(prices.index)
+        for t in prices.columns:
+            if t in volume_df.columns:
+                vol_t = volume_df[t]
+                price_t = prices[t]
+                # For zero volume rows, use previous close
+                prices[t] = price_t.where(vol_t != 0, price_t.shift(1))
     # Forward-fill to handle missing values
     prices = prices.ffill()
     # Drop columns that are entirely NaN
