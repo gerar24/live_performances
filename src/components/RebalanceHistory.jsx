@@ -13,6 +13,9 @@ const RebalanceHistory = ({ dates, series, rebalances, namesMap = {} }) => {
             <div key={r.date || Math.random()} className="border border-neutral-800 rounded p-3">
               <div className="text-sm text-neutral-300 mb-1">{r.date}</div>
               {r.notes ? <div className="text-xs text-neutral-400 mb-2">{r.notes}</div> : null}
+              {r.leverage && Number(r.leverage) !== 1 ? (
+                <div className="text-xs text-sky-400 mb-2">Leverage: {Number(r.leverage).toFixed(2)}x</div>
+              ) : null}
               <div className="flex flex-wrap gap-2">
                 {Object.entries(r.allocation || {})
                   .filter(([, w]) => (w ?? 0) > 0)

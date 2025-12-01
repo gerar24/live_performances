@@ -67,7 +67,6 @@ const AllocationChart = ({ dates, series, namesMap = {} }) => {
       y: {
         stacked: true,
         min: 0,
-        max: 100,
         ticks: { color: '#a3a3a3', callback: (v) => `${v}%` },
         grid: { color: 'rgba(120,120,120,0.15)' },
       },

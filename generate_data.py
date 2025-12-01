@@ -192,6 +192,13 @@ def simulate_portfolio_path(prices: pd.DataFrame, returns: pd.DataFrame, index: 
             continue
         norm_alloc = safe_normalize({k: float(v) for k, v in allocation.items() if k in union_tickers})
         price_paid = rb.get("price") or rb.get("prices") or {}
+        lev = rb.get("leverage", 1.0)
+        try:
+            lev = float(lev)
+        except Exception:
+            lev = 1.0
+        if not math.isfinite(lev) or lev <= 0:
+            lev = 1.0
         try:
             rb_date = pd.to_datetime(date_str)
         except Exception:
@@ -201,13 +208,14 @@ def simulate_portfolio_path(prices: pd.DataFrame, returns: pd.DataFrame, index: 
             pos = 0
         if pos >= len(index):
             pos = len(index) - 1
-        rb_map[pos] = {"weights": norm_alloc, "prices": price_paid}
+        rb_map[pos] = {"weights": norm_alloc, "prices": price_paid, "leverage": lev}
 
     if len(rb_map) == 0:
         equity = pd.Series([100.0] * len(index), index=index)
         return equity, {}
 
     shares = {t: 0.0 for t in union_tickers}
+    debt = 0.0  # Positive means borrowed (leverage), negative means cash
     equity_values = []
     alloc_history = {t: [] for t in union_tickers}
 
@@ -217,21 +225,27 @@ def simulate_portfolio_path(prices: pd.DataFrame, returns: pd.DataFrame, index: 
             prev_dt = index[i - 1] if i > 0 else None
             # Portfolio value at previous close (or baseline 100 if first day)
             if i > 0:
-                total_equity_prev = 0.0
+                assets_value_prev = 0.0
                 for t in union_tickers:
                     p_prev = float(prices.at[prev_dt, t]) if t in prices.columns else float('nan')
                     if math.isfinite(p_prev) and p_prev > 0:
-                        total_equity_prev += shares[t] * p_prev
-                if not math.isfinite(total_equity_prev) or total_equity_prev <= 0.0:
-                    total_equity_prev = 100.0
+                        assets_value_prev += shares[t] * p_prev
+                net_equity_prev = assets_value_prev - debt
+                if not math.isfinite(net_equity_prev) or net_equity_prev <= 0.0:
+                    net_equity_prev = 100.0
             else:
-                total_equity_prev = 100.0
+                net_equity_prev = 100.0
 
             targets = rb_map[i]["weights"]
+            lev = float(rb_map[i].get("leverage", 1.0))
             paid = rb_map[i]["prices"]
+            # Determine gross invested value given leverage
+            gross_value = max(0.0, net_equity_prev) * max(lev, 0.0)
+            # Update debt to match new gross exposure (positive = borrowed, negative = excess cash)
+            debt = gross_value - net_equity_prev
             for t in union_tickers:
                 w = float(targets.get(t, 0.0))
-                target_value = total_equity_prev * w
+                target_value = gross_value * w
                 entry_price = paid.get(t) if isinstance(paid, dict) else None
                 if entry_price is None or not isinstance(entry_price, (int, float)) or entry_price <= 0:
                     # Fall back to previous close price when available, else today's close if first day
@@ -245,18 +259,20 @@ def simulate_portfolio_path(prices: pd.DataFrame, returns: pd.DataFrame, index: 
                     shares[t] = target_value / entry_price
 
         # Value portfolio at today's close
-        total_equity_today = 0.0
+        assets_value_today = 0.0
         for t in union_tickers:
             p = float(prices.at[dt, t]) if t in prices.columns else float('nan')
             if math.isfinite(p) and p > 0:
-                total_equity_today += shares[t] * p
-        equity_values.append(total_equity_today)
+                assets_value_today += shares[t] * p
+        net_equity_today = assets_value_today - debt
+        equity_values.append(net_equity_today)
 
-        if total_equity_today > 0.0:
+        if net_equity_today > 0.0:
             for t in union_tickers:
                 p = float(prices.at[dt, t]) if t in prices.columns else float('nan')
                 v = shares[t] * p if math.isfinite(p) and p > 0 else 0.0
-                alloc_history[t].append(v / total_equity_today if total_equity_today else 0.0)
+                # Store allocation as gross weight vs net equity, so sums reflect leverage
+                alloc_history[t].append(v / net_equity_today if net_equity_today else 0.0)
         else:
             for t in union_tickers:
                 alloc_history[t].append(0.0)
@@ -420,7 +436,8 @@ def main():
                 "date": rb.get("date"),
                 "notes": rb.get("notes", ""),
                 "allocation": rb.get("allocation", {}),
-                "price": rb.get("price") or rb.get("prices") or {}
+                "price": rb.get("price") or rb.get("prices") or {},
+                "leverage": rb.get("leverage", 1.0)
             })
         allocation_out[portfolio_name] = {
             "dates": dates_list,
