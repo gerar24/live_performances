@@ -3,18 +3,28 @@
     {
       "date": "2025-10-02",
       "notes": "Inicio.",
+      "leverage": 1.0,
       "allocation": { "IUCM.L": 0.246, "IUCD.L": 0.0065, "IUCS.L": 0.073, "IUES.L": 0.028, "IUFS.L": 0.157, "IUHC.L": 0.042,"IUIS.L":0.042,"IUIT.L":0.1025,"IUMS.L":0.015,"XLRE":0.019,"IUUS.L":0.269, "CSPX.L": 0.0 }
     },
     {
       "date": "2025-11-03",
       "notes": "Rotación 1.",
+      "leverage": 1.0,
       "allocation": { "IUCM.L": 0.2958, "IUCD.L": 0.0058, "IUCS.L": 0.0539, "IUES.L": 0.0404, "IUFS.L": 0.1284, "IUHC.L": 0.0348,"IUIS.L":0.0406,"IUIT.L":0.1093,"IUMS.L":0.0175,"XLRE":0.0196,"IUUS.L":0.2539, "CSPX.L": 0.0 }
+    },
+    {
+      "date": "2025-12-01",
+      "notes": "Rotación 2.",
+      "leverage": 1.0,
+      "allocation": { "IUCM.L": 0.3036, "IUCD.L": 0.0092, "IUCS.L": 0.0578, "IUES.L": 0.0467, "IUFS.L": 0.1038, "IUHC.L": 0.0473,"IUIS.L":0.043,"IUIT.L":0.1133,"IUMS.L":0.0175,"XLRE":0.0168,"IUUS.L":0.241, "CSPX.L": 0.0 }
     }
+
   ],
   "iShares S&P 500 Equal Weight UCITS ETF": [
     {
       "date": "2025-10-02",
       "notes": "Inicio.",
+      "leverage": 1.0,
       "allocation": { "EWSP.L": 1.0,"CSPX.L": 0.0 }
     }
   ]
