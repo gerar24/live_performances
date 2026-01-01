@@ -1,18 +1,18 @@
 {
   "portfolios": {
     "S&P 500 MultiFactor Sector Rotation Model": {
-      "total_return": 0.021385,
-      "sharpe": 0.9602,
-      "volatility": 0.091096,
+      "total_return": 0.021343,
+      "sharpe": 0.9584,
+      "volatility": 0.091099,
       "max_drawdown": -0.028595,
-      "sortino": 1.9028,
+      "sortino": 1.8994,
       "correlations": {
         "CSPX.L": 0.8656
       },
       "beta": 0.6622,
       "beta_vs": "CSPX.L",
       "up_capture": 0.6404,
-      "down_capture": 0.6333,
+      "down_capture": 0.6335,
       "capture_vs": "CSPX.L"
     },
     "iShares S&P 500 Equal Weight UCITS ETF": {
