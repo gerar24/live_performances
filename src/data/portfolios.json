@@ -17,6 +17,12 @@
       "notes": "Rotación 2.",
       "leverage": 1.0,
       "allocation": { "IUCM.L": 0.3036, "IUCD.L": 0.0092, "IUCS.L": 0.0578, "IUES.L": 0.0467, "IUFS.L": 0.1038, "IUHC.L": 0.0473,"IUIS.L":0.043,"IUIT.L":0.1133,"IUMS.L":0.0175,"XLRE":0.0168,"IUUS.L":0.241, "CSPX.L": 0.0 }
+    },
+    {
+      "date": "2026-01-05",
+      "notes": "Rotación 3.",
+      "leverage": 1.0,
+      "allocation": { "IUCM.L": 0.3269, "IUCD.L": 0.0114, "IUCS.L": 0.0139, "IUES.L": 0.0427, "IUFS.L": 0.0895, "IUHC.L": 0.0731,"IUIS.L":0.0405,"IUIT.L":0.1746,"IUMS.L":0.0133,"XLRE":0.0103,"IUUS.L":0.2038, "CSPX.L": 0.0 }
     }
 
   ],
