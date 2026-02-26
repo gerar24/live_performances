@@ -1,43 +1,43 @@
 {
   "portfolios": {
     "S&P 500 MultiFactor Sector Rotation Model": {
-      "total_return": 0.051701,
-      "sharpe": 1.5038,
-      "volatility": 0.083559,
+      "total_return": 0.042095,
+      "sharpe": 1.232,
+      "volatility": 0.083974,
       "max_drawdown": -0.028595,
-      "sortino": 2.932,
+      "sortino": 2.3951,
       "correlations": {
-        "CSPX.L": 0.8601
+        "CSPX.L": 0.8617
       },
-      "beta": 0.6373,
+      "beta": 0.637,
       "beta_vs": "CSPX.L",
-      "up_capture": 0.6653,
-      "down_capture": 0.5806,
+      "up_capture": 0.6618,
+      "down_capture": 0.5819,
       "capture_vs": "CSPX.L"
     },
     "iShares S&P 500 Equal Weight UCITS ETF": {
-      "total_return": 0.067412,
-      "sharpe": 1.7271,
-      "volatility": 0.09412,
+      "total_return": 0.06859,
+      "sharpe": 1.7545,
+      "volatility": 0.09418,
       "max_drawdown": -0.03874,
-      "sortino": 2.9526,
+      "sortino": 3.0012,
       "correlations": {
-        "CSPX.L": 0.5928
+        "CSPX.L": 0.5811
       },
-      "beta": 0.4948,
+      "beta": 0.4818,
       "beta_vs": "CSPX.L",
-      "up_capture": 0.5933,
-      "down_capture": 0.4387,
+      "up_capture": 0.5931,
+      "down_capture": 0.4118,
       "capture_vs": "CSPX.L"
     }
   },
   "benchmarks": {
     "CSPX.L": {
-      "total_return": 0.042326,
-      "sharpe": 0.9393,
-      "volatility": 0.113852,
+      "total_return": 0.02899,
+      "sharpe": 0.661,
+      "volatility": 0.114707,
       "max_drawdown": -0.047622,
-      "sortino": 1.7121,
+      "sortino": 1.2002,
       "beta": 1.0,
       "up_capture": 1.0,
       "down_capture": 1.0,
