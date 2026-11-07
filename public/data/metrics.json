@@ -1,11 +1,11 @@
 {
   "portfolios": {
     "S&P 500 MultiFactor Sector Rotation Model": {
-      "total_return": 0.065892,
-      "sharpe": 0.6451,
-      "volatility": 0.095094,
+      "total_return": 0.065878,
+      "sharpe": 0.645,
+      "volatility": 0.095095,
       "max_drawdown": -0.054701,
-      "sortino": 1.1871,
+      "sortino": 1.1869,
       "correlations": {
         "CSPX.L": 0.8421
       },
